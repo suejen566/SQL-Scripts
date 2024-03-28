@@ -168,16 +168,16 @@ BEGIN
 						FROM	@EventColumns 
 					GROUP BY	ColName, Element, DataType, NodeName),
 				cteConsolidateCols AS (
-						SELECT	ColName, NodeName, Element, DataType, DisplayName, Events, 
-								IIF(NumEvents <> @NumEvents, 1, 0) Conditional,
-								CONVERT(nvarchar(max), 
-									CASE	DataType
-											WHEN 'xml'				THEN CONCAT('e.query(''event/', NodeName, '[@name="', ColName, '"]/value/*'') ')
-											WHEN 'varbinary(max)'	THEN CONCAT('e.value(''xs:hexBinary((event/', NodeName, '[@name="', ColName, '"]/value)[1])'', ''', DataType, ''') ')
-																	ELSE CONCAT('e.value(''(event/', NodeName, '[@name="', ColName, '"]/', Element, ')[1]'', ''', DataType, ''') ')
-									END)	XSMethod,
-								DENSE_RANK() OVER (ORDER BY IIF(@ColumnOrder = 'C', NumEvents, 0) DESC, ColName) ColOrder								
-								FROM	cteColumnDef)
+				SELECT	ColName, NodeName, Element, DataType, DisplayName, Events, 
+						IIF(NumEvents <> @NumEvents, 1, 0) Conditional,
+						CONVERT(nvarchar(max), 
+							CASE	DataType
+									WHEN 'xml'				THEN CONCAT('e.query(''event/', NodeName, '[@name="', ColName, '"]/value/*'') ')
+									WHEN 'varbinary(max)'	THEN CONCAT('e.value(''xs:hexBinary((event/', NodeName, '[@name="', ColName, '"]/value)[1])'', ''', DataType, ''') ')
+															ELSE CONCAT('e.value(''(event/', NodeName, '[@name="', ColName, '"]/', Element, ')[1]'', ''', DataType, ''') ')
+							END)	XSMethod,
+						DENSE_RANK() OVER (ORDER BY IIF(@ColumnOrder = 'C', NumEvents, 0) DESC, ColName) ColOrder								
+						FROM	cteColumnDef)
 				INSERT	INTO @ResultColumns (DisplayName, DataType, XSMethod, ColOrder)
 						SELECT	DisplayName, DataType,
 								CONCAT(IIF(Conditional = 0, '', 'CASE '),
@@ -222,13 +222,6 @@ BEGIN
 				WHERE	s.name = ''', @SessionName, '''
 					AND	t.target_name = ''ring_buffer''')
 				)/*ENDIIF*/, '
-		DECLARE	@Events		TABLE (
-				Event		xml)
-		INSERT	INTO @Events 
-				', IIF(@Target = 'F', 'SELECT	CONVERT(xml, event_data)
-						FROM	sys.fn_xe_file_target_read_file(@Path, @MDPath, @InitialFileName, @InitialOffset)',
-						'SELECT	e.query(''.'')
-						FROM	@TargetData.nodes(''RingBufferTarget/event'') Event(e)')/*ENDIIF*/, '
 
 		INSERT	INTO @EventsRet
 				SELECT	EventTime,
@@ -251,15 +244,6 @@ END')			FROM	@ResultColumns
 	
 	END	TRY
 	BEGIN CATCH
-		DECLARE	@ErrorMsg	nvarchar(max)
-		SELECT	@ErrorMsg = CONCAT(
-								'Error ',			ERROR_NUMBER(),
-								':',				ERROR_MESSAGE(),
-								'; Severity: ',		ERROR_SEVERITY(),
-								'; State: ',		ERROR_STATE(),
-								'; Procedure: ',	ERROR_PROCEDURE(),
-								'; Line: ',			ERROR_LINE())
-		PRINT	(@ErrorMsg);
 		THROW;
 	END CATCH;
 END
