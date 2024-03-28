@@ -139,8 +139,6 @@ BEGIN
 								WHERE	c2.ColName = c1.ColName
 							ORDER BY	t.TypeID)
 				FROM	@EventColumns c1;
-		DROP	TABLE IF EXISTS ##e
-		SELECT	* INTO ##e FROM @EventColumns
 
 		DECLARE	@ResultColumns	TABLE (
 				DisplayName		sysname,
@@ -190,11 +188,8 @@ BEGIN
 								FROM	cteConsolidateCols
 							GROUP BY	DisplayName, DataType, Conditional, ColOrder
 								
-		DROP TABLE IF EXISTS ##c
-		SELECT	* INTO ##c FROM @ResultColumns
 
 		DECLARE	@Stmt		nvarchar(max)
-
 		SELECT	@FunctionName = CONCAT(QUOTENAME(ISNULL(PARSENAME(@FunctionName, 2), 'dbo')), 
 									'.', QUOTENAME(PARSENAME(@FunctionName, 1)));
 
