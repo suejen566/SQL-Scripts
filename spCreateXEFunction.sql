@@ -1,7 +1,7 @@
 /*
 **	Create a table-valued function to return shredded Extended Event target data.  
 */
-CREATE	PROCEDURE spCreateXEFunction
+ALTER	PROCEDURE spCreateXEFunction
 				@SessionName		sysname,					-- Name of existing Extended Event session
 				@FunctionName		sysname,					-- Name of function to create or overwrite
 				@RecreateFunction	tinyint = 0,				-- Whether existing @FunctionName should be overwritten
@@ -80,7 +80,7 @@ BEGIN
 								SELECT	value FROM STRING_SPLIT(@EventNames, ',')))
 		/*
 		**	We need to know how many total events the function will return, so we can selectively query the columns 
-		**	that aren't included in all the events (see the @ResultColumns update below).
+		**	that aren't included in all the events.
 		*/
 		SELECT	@NumEvents = @@ROWCOUNT
 		IF		@NumEvents = 0
@@ -112,6 +112,7 @@ BEGIN
 						FROM	@Events e
 						JOIN	sys.dm_xe_object_columns c
 							ON	c.object_name = e.EventName
+							AND	c.object_package_guid = e.PackageGUID
 					LEFT JOIN	sys.dm_xe_objects o
 							ON	o.name = c.name 
 						WHERE	c.column_type = 'data'
@@ -176,7 +177,7 @@ BEGIN
 									WHEN 'varbinary(max)'	THEN CONCAT('e.value(''xs:hexBinary((event/', NodeName, '[@name="', ColName, '"]/value)[1])'', ''', DataType, ''') ')
 															ELSE CONCAT('e.value(''(event/', NodeName, '[@name="', ColName, '"]/', Element, ')[1]'', ''', DataType, ''') ')
 							END)	XSMethod,
-						DENSE_RANK() OVER (ORDER BY IIF(@ColumnOrder = 'C', NumEvents, 0) DESC, ColName) ColOrder								
+						DENSE_RANK() OVER (ORDER BY IIF(@ColumnOrder = 'C', NumEvents, 0) DESC, lower(DisplayName)) ColOrder								
 						FROM	cteColumnDef)
 				INSERT	INTO @ResultColumns (DisplayName, DataType, XSMethod, ColOrder)
 						SELECT	DisplayName, DataType,
@@ -188,10 +189,18 @@ BEGIN
 								FROM	cteConsolidateCols
 							GROUP BY	DisplayName, DataType, Conditional, ColOrder
 								
-
-		DECLARE	@Stmt		nvarchar(max)
+		DECLARE	@Stmt		nvarchar(max),
+				@TableDef	nvarchar(max)
 		SELECT	@FunctionName = CONCAT(QUOTENAME(ISNULL(PARSENAME(@FunctionName, 2), 'dbo')), 
 									'.', QUOTENAME(PARSENAME(@FunctionName, 1)));
+		WITH	cteTableDef AS (
+				SELECT	DISTINCT DisplayName, DataType, ColOrder		
+						FROM	@ResultColumns)
+				SELECT	@TableDef = STRING_AGG(CONCAT('
+				',						CONVERT(nvarchar(max), DisplayName), 
+										REPLICATE(' ', 64 - LEN(DisplayName)), DataType), ',') 
+									WITHIN GROUP (ORDER BY ColOrder)
+						FROM	cteTableDef
 
 		/*
 		**	Create the ddl for the function and execute it.
@@ -205,9 +214,7 @@ BEGIN
 RETURNS @EventsRet TABLE (
 				EventTime                                                       datetime,
 				EventName                                                       sysname,', 
-				STRING_AGG(CONCAT('
-				', CONVERT(nvarchar(max), DisplayName), REPLICATE(' ', 64 - LEN(DisplayName)), DataType), ',') 
-					WITHIN GROUP (ORDER BY ColOrder), ') AS
+				@TableDef,') AS
 BEGIN
 		DECLARE	@TargetData		xml
 		', IIF(@Target = 'F', 
